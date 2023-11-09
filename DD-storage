@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Prompt the user for the output directory
+read -p "Enter the directory where you want the files to be written: " output_dir
+
+# Create the directory if it doesn't exist
+mkdir -p "$output_dir"
+
+# Prompt the user for the total write size in GB
+read -p "Enter the total write size in GB: " total_size
+
+# Prompt the user for the minimum and maximum file sizes in MB
+read -p "Enter the minimum file size in MB: " min_size
+read -p "Enter the maximum file size in MB: " max_size
+
+# Prompt the user for a naming scheme for the files
+read -p "Enter a naming scheme for the files (e.g., 'datafile'): " naming_scheme
+
+# Convert total size to MB
+let total_size_mb=$total_size*1024
+
+# Counter for the total size of files created
+current_size=0
+
+# File counter
+file_count=1
+
+# Width of the progress bar
+progress_bar_width=50
+
+# Function to draw the progress bar
+draw_progress_bar() {
+  # Calculate how many slots in the bar should be filled
+  let filled_slots=($1*$progress_bar_width/$2)
+  
+  # Create the bar string with filled and unfilled slots
+  bar=$(printf '%0.s█' $(seq 1 $filled_slots))
+  bar="$bar$(printf '%0.s-' $(seq 1 $(($progress_bar_width-$filled_slots))))"
+
+  # Print the bar
+  printf "\rProgress: [%s] %d%%" "$bar" $(($1*100/$2))
+}
+
+# Continue until the total size is reached or exceeded
+while [ $current_size -lt $total_size_mb ]; do
+  # Generate a random size between the user-specified minimum and maximum
+  size=$(shuf -i $min_size-$max_size -n 1)
+  
+  # Check if the next file will exceed the total size
+  if [ $(($current_size+$size)) -gt $total_size_mb ]; then
+    # Adjust the last file size to not exceed total size
+    size=$(($total_size_mb-$current_size))
+  fi
+  
+  # Use dd to create a file with the user-specified naming scheme and a file count appended
+  file_name="${output_dir}/${naming_scheme}_${file_count}"
+  dd if=/dev/urandom of="$file_name" bs=1M count=$size >/dev/null 2>&1
+  
+  # Increment the current size by the size of the file just created
+  let current_size+=$size
+  
+  # Draw the progress bar
+  draw_progress_bar $current_size $total_size_mb
+  
+  # Increment the file counter
+  let file_count+=1
+done
+
+# Print newline after progress bar
+echo
+
+echo "Created $file_count files with naming scheme '${naming_scheme}_#' for a total of $current_size MB in $output_dir"
