@@ -7,9 +7,10 @@ PACKETS=10     # Number of packets per MTR run
 
 # Function to display usage
 usage() {
-  echo "Usage: $0 --IPADDRESS [--duration DURATION_IN_SECONDS]"
+  echo "Usage: $0 --IPADDRESS [--duration DURATION_IN_SECONDS] [--name CUSTOM_NAME]"
   echo "  --IPADDRESS       The IP address to run MTR against"
   echo "  --duration        Optional: specify custom duration in seconds (default is 600 seconds)"
+  echo "  --name            Optional: specify a custom name for the log file (appends .mtr.log)"
   exit 1
 }
 
@@ -18,6 +19,10 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --duration)
       DURATION="$2"
+      shift 2
+      ;;
+    --name)
+      CUSTOM_NAME="$2"
       shift 2
       ;;
     --*)
@@ -36,7 +41,12 @@ if [ -z "$IPADDRESS" ]; then
   usage
 fi
 
-LOGFILE="${IPADDRESS}.log"
+# Determine the log file name
+if [ -n "$CUSTOM_NAME" ]; then
+  LOGFILE="${CUSTOM_NAME}.mtr.log"
+else
+  LOGFILE="${IPADDRESS}.mtr.log"
+fi
 
 # Calculate the end time
 end_time=$((SECONDS + DURATION))
