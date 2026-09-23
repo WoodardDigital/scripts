@@ -48,22 +48,39 @@ jesc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '; }
 # ---- checks ------------------------------------------------------------
 
 section "PCI: NVIDIA device presence"
-PCI_NVIDIA="$(lspci -nnk 2>/dev/null | grep -A4 -i nvidia)"
+# lspci -k prints one block per PCI function (header line "BB:DD.F ..." then
+# indented detail lines). Keep only the blocks whose header names NVIDIA, so a
+# neighbouring device's "Kernel driver in use" is never mistaken for the GPU's.
+PCI_NVIDIA="$(lspci -nnk 2>/dev/null | awk '/^[0-9a-fA-F:.]+ /{keep=(tolower($0) ~ /nvidia/)} keep')"
 if [ -z "$PCI_NVIDIA" ]; then
   note CRIT pci "No NVIDIA PCI device visible to guest"
 else
   echo "$PCI_NVIDIA"
-  NVIDIA_COUNT="$(lspci -nn 2>/dev/null | grep -ci nvidia)"
+  NVIDIA_COUNT="$(printf '%s\n' "$PCI_NVIDIA" | grep -cE '^[0-9a-fA-F:.]+ ')"
   note INFO pci "Found ${NVIDIA_COUNT} NVIDIA PCI function(s)"
-  if echo "$PCI_NVIDIA" | grep -qi "Kernel driver in use:"; then
-    DRV="$(echo "$PCI_NVIDIA" | grep "Kernel driver in use" | awk -F': ' '{print $2}' | sort -u)"
-    if echo "$DRV" | grep -qv nvidia; then
-      note WARN pci "Bound driver(s) not 'nvidia': ${DRV}"
-    else
-      note OK pci "Kernel driver in use: nvidia"
-    fi
+  # Judge only the GPU itself (PCI class 03xx: VGA/3D controller). Companion
+  # functions (HDMI audio 0403, USB-C 0c03) legitimately bind other drivers.
+  GPU_FUNCS="$(printf '%s\n' "$PCI_NVIDIA" | grep -cE '^[0-9a-fA-F:.]+ .*\[03[0-9a-fA-F]{2}\]')"
+  if [ "$GPU_FUNCS" -eq 0 ]; then
+    GPU_BLOCKS="$PCI_NVIDIA"        # no class info (old lspci?) - judge every NVIDIA function
+    GPU_FUNCS="$NVIDIA_COUNT"
   else
-    note CRIT pci "No kernel driver bound to NVIDIA device (nouveau/nvidia not attached)"
+    GPU_BLOCKS="$(printf '%s\n' "$PCI_NVIDIA" | awk '/^[0-9a-fA-F:.]+ /{keep=($0 ~ /\[03[0-9a-fA-F][0-9a-fA-F]\]/)} keep')"
+  fi
+  GPU_DRV="$(printf '%s\n' "$GPU_BLOCKS" | awk -F': ' '/Kernel driver in use:/{print $2}' | sort -u)"
+  GPU_BOUND="$(printf '%s\n' "$GPU_BLOCKS" | grep -c 'Kernel driver in use:')"
+  if [ -z "$GPU_DRV" ]; then
+    note CRIT pci "No kernel driver bound to the NVIDIA GPU (nouveau/nvidia not attached)"
+  elif printf '%s\n' "$GPU_DRV" | grep -qvx nvidia; then
+    DRV_LIST="$(printf '%s\n' "$GPU_DRV" | paste -sd, -)"
+    HINT=""
+    printf '%s\n' "$GPU_DRV" | grep -q '^vfio-pci$' && HINT=" (vfio-pci belongs on the hypervisor, not inside the guest)"
+    printf '%s\n' "$GPU_DRV" | grep -q '^nouveau$'  && HINT=" (nouveau must be blacklisted for the nvidia driver)"
+    note WARN pci "GPU bound to driver(s) other than 'nvidia': ${DRV_LIST}${HINT}"
+  elif [ "$GPU_BOUND" -lt "$GPU_FUNCS" ]; then
+    note WARN pci "Only ${GPU_BOUND} of ${GPU_FUNCS} NVIDIA GPU function(s) have a kernel driver bound"
+  else
+    note OK pci "Kernel driver in use: nvidia (${GPU_FUNCS} GPU function[s])"
   fi
 fi
 
