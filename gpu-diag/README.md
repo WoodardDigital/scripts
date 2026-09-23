@@ -13,25 +13,30 @@ the **current** `gpu-diag.sh` from this repo and runs it on the node itself,
 with the node's own `bash`, `nvidia-smi`, `lspci`, `dmesg`, `journalctl` and
 friends. The wrapper does not need to change when the script does.
 
+**Deploy command.** From any machine with `kubectl` access to the cluster,
+no checkout needed:
+
+```
+curl -fsSL https://raw.githubusercontent.com/WoodardDigital/scripts/main/gpu-diag/k8s/run.sh | bash -s -- <node>
+```
+
+That runs the diagnostic on the node and saves
+`./reports/<node>-<utc-timestamp>.log` and `.json` on **your machine**, then
+deletes the debug pod. From a checkout the same thing is `k8s/run.sh <node>`.
+
+If you only want to poke at a node interactively, the underlying command is:
+
 ```
 kubectl debug node/<node> -it --profile=sysadmin --image=ghcr.io/woodarddigital/gpu-diag
 ```
 
-That streams the report to your terminal and then drops you into a shell on
-the pod with the report files in `/output`. Copy them to your machine from a
-second terminal while that shell is open (the pod name is the
-`node-debugger-…` one kubectl printed), then `exit` and delete the pod:
-
-```
-kubectl cp <pod>:/output/<node>-<ts>.log  ./<node>-<ts>.log
-kubectl cp <pod>:/output/<node>-<ts>.json ./<node>-<ts>.json
-kubectl delete pod <pod>
-```
-
-Inside that shell, `host <command>` runs a command on the node, e.g.
+It streams the report and drops you into a shell on the pod with the files in
+`/output`, but nothing is copied off the pod: you would `kubectl cp` them from
+a second terminal before typing `exit`, then delete the `node-debugger-…`
+pod. Inside that shell, `host <command>` runs a command on the node, e.g.
 `host nvidia-smi`.
 
-### Let run.sh do the copying
+### What run.sh does
 
 `k8s/run.sh` wraps the same `kubectl debug` call non-interactively. Before
 launching the pod it prints a cluster-side view of the node (Ready/cordon
@@ -45,7 +50,7 @@ pod. `--cuda-test` additionally runs a one-shot vectorAdd pod requesting one
 when none is free).
 
 ```
-cd gpu-diag/k8s
+cd gpu-diag/k8s                              # or: curl -fsSL <run.sh url> | bash -s -- <args>
 ./run.sh <node>                              # one node
 ./run.sh node-a node-b                       # several, one after another
 ./run.sh -l nvidia.com/gpu.present=true      # every node matching a label selector

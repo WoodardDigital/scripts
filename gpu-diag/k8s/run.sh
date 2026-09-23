@@ -41,7 +41,8 @@
 #
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# works from a checkout or piped from the repo URL (then $HERE is "." and --local is unavailable)
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)"
 REPO_RAW="https://raw.githubusercontent.com/WoodardDigital/scripts"
 
 OUT_DIR="./reports"
@@ -63,7 +64,13 @@ CUDA_IMAGE="nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0"
 CLUSTER_VIEW=true
 NODES=()
 
-usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+usage() {
+  if [ -r "$0" ] && grep -q '^set -euo' "$0" 2>/dev/null; then
+    sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+  else
+    echo "usage: run.sh [options] <node> [<node> ...]   (see https://github.com/WoodardDigital/scripts/tree/main/gpu-diag#readme)"
+  fi
+}
 die()   { printf 'run.sh: %s\n' "$*" >&2; exit 1; }
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
@@ -98,7 +105,7 @@ fi
 LOCAL_ENTRYPOINT="$HERE/entrypoint.sh"
 LOCAL_SCRIPT="$HERE/../gpu-diag.sh"
 if [ "$LOCAL" = true ]; then
-  [ -r "$LOCAL_ENTRYPOINT" ] || die "--local: $LOCAL_ENTRYPOINT not found"
+  [ -r "$LOCAL_ENTRYPOINT" ] || die "--local needs a checkout: $LOCAL_ENTRYPOINT not found"
   [ -r "$LOCAL_SCRIPT" ]     || die "--local: $LOCAL_SCRIPT not found"
 fi
 
